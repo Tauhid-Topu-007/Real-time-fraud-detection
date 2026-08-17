@@ -1,0 +1,26 @@
+# Core
+streamlit
+pandas
+numpy
+plotly
+
+# ML
+scikit-learn
+xgboost
+joblib
+
+# Visualization
+matplotlib
+seaborn
+plotly
+
+# Utils
+pyyaml
+python-dotenv
+loguru
+
+# Data Validation
+pydantic
+
+# For SHAP explanations
+shap

@@ -1,0 +1,60 @@
+# Core Data Science
+numpy
+pandas
+scikit-learn
+scipy
+
+# ML Models
+xgboost
+lightgbm
+
+# Data Handling
+dask[dataframe]
+pyarrow
+fastparquet
+
+# Imbalance Handling
+imbalanced-learn
+
+# API
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+
+# Visualization
+matplotlib
+seaborn
+plotly
+
+# Model Explainability
+shap
+
+# MLOps
+mlflow
+
+# Database
+sqlalchemy
+redis
+
+# Streaming
+kafka-python
+
+# Monitoring
+prometheus-client
+evidently
+
+# Utils
+python-dotenv
+pyyaml
+joblib
+tqdm
+loguru
+
+# Testing
+pytest
+pytest-cov
+httpx
+
+# Memory Optimization
+memory-profiler
