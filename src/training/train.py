@@ -35,6 +35,7 @@ class BigDataFraudModelTrainer:
             self.params['tree_method'] = 'hist'
             self.params['n_jobs'] = -1
             self.params['verbosity'] = 0
+            self.params['enable_categorical'] = True  # Enable categorical support
         elif self.model_type == 'lightgbm':
             self.params['n_jobs'] = -1
             self.params['verbose'] = -1
@@ -52,35 +53,45 @@ class BigDataFraudModelTrainer:
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
     
+    def prepare_data_for_xgboost(self, df):
+        """Convert object columns to category for XGBoost"""
+        for col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype('category')
+        return df
+    
     def handle_imbalance(self, X_train, y_train, method='smote'):
-        """Handle class imbalance"""
+        """Handle class imbalance with proper categorical handling"""
         logger.info(f"Handling imbalance using {method}")
         
         if method == 'smote':
-            if len(X_train) > 100000:
-                logger.info("Large dataset detected, using sampled SMOTE")
-                combined = pd.concat([X_train, y_train], axis=1)
-                fraud = combined[combined[y_train.name] == 1]
-                non_fraud = combined[combined[y_train.name] == 0].sample(
-                    n=min(len(fraud) * 10, 100000),
-                    random_state=42
-                )
-                combined_sample = pd.concat([fraud, non_fraud])
-                X_sampled = combined_sample.drop(columns=[y_train.name])
-                y_sampled = combined_sample[y_train.name]
-                
-                smote = SMOTE(random_state=42, n_jobs=-1)
-                X_resampled, y_resampled = smote.fit_resample(X_sampled, y_sampled)
-            else:
-                smote = SMOTE(random_state=42, n_jobs=-1)
-                X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+            numeric_cols = X_train.select_dtypes(include=[np.number]).columns.tolist()
+            categorical_cols = [col for col in X_train.columns if col not in numeric_cols]
+            
+            logger.info(f"Numeric columns: {len(numeric_cols)}, Categorical: {len(categorical_cols)}")
+            
+            X_train_numeric = X_train[numeric_cols].copy()
+            
+            try:
+                smote = SMOTE(random_state=42)
+                X_resampled, y_resampled = smote.fit_resample(X_train_numeric, y_train)
+            except Exception as e:
+                logger.warning(f"SMOTE failed: {e}, using class weights instead")
+                return X_train, y_train
+            
+            X_resampled = pd.DataFrame(X_resampled, columns=numeric_cols)
+            
+            for col in categorical_cols:
+                if col in X_train.columns:
+                    most_frequent = X_train[col].mode()[0]
+                    X_resampled[col] = most_frequent
             
             logger.info(f"Resampled to {len(X_resampled):,} samples")
             return X_resampled, y_resampled
         else:
             return X_train, y_train
     
-    def train(self, X_train, y_train, use_smote=True):
+    def train(self, X_train, y_train, use_smote=False):
         """Train the model with MLflow tracking"""
         
         with mlflow.start_run(run_name=f"{self.model_type}_training") as run:
@@ -93,20 +104,20 @@ class BigDataFraudModelTrainer:
             else:
                 X_train_processed, y_train_processed = X_train, y_train
             
-            if 'scale_pos_weight' not in self.params:
-                fraud_ratio = y_train.sum() / len(y_train)
-                scale_pos_weight = (1 - fraud_ratio) / (fraud_ratio + 1e-6)
-                self.params['scale_pos_weight'] = min(scale_pos_weight, 100)
-                logger.info(f"Set scale_pos_weight to {self.params['scale_pos_weight']:.2f}")
+            # Prepare data for XGBoost
+            if self.model_type == 'xgboost':
+                X_train_processed = self.prepare_data_for_xgboost(X_train_processed)
+            
+            # Use scale_pos_weight for imbalance
+            fraud_ratio = y_train.sum() / len(y_train)
+            scale_pos_weight = (1 - fraud_ratio) / (fraud_ratio + 1e-6)
+            self.params['scale_pos_weight'] = min(scale_pos_weight, 100)
+            logger.info(f"Set scale_pos_weight to {self.params['scale_pos_weight']:.2f}")
             
             model = self.get_model()
             
             logger.info(f"Training {self.model_type} model...")
-            model.fit(
-                X_train_processed, 
-                y_train_processed,
-                eval_metric='aucpr' if self.model_type == 'xgboost' else None
-            )
+            model.fit(X_train_processed, y_train_processed)
             
             mlflow.sklearn.log_model(model, "fraud_model")
             
@@ -202,6 +213,11 @@ class BigDataFraudModelTrainer:
         X = df.drop(columns=[target_col])
         y = df[target_col]
         
+        # Ensure all categorical columns are properly typed
+        for col in X.columns:
+            if X[col].dtype == 'object':
+                X[col] = X[col].astype('category')
+        
         X_temp, X_test, y_temp, y_test = train_test_split(
             X, y, test_size=0.15, random_state=42, stratify=y
         )
@@ -215,7 +231,8 @@ class BigDataFraudModelTrainer:
         logger.info(f"Test set: {len(X_test):,} samples")
         logger.info(f"Fraud rate in training: {y_train.mean():.4f}")
         
-        model = self.train(X_train, y_train, use_smote=True)
+        # Train with SMOTE disabled for speed
+        model = self.train(X_train, y_train, use_smote=False)
         
         best_threshold, threshold_results = self.find_optimal_threshold(model, X_val, y_val)
         

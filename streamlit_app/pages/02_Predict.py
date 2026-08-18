@@ -2,17 +2,24 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from streamlit_app.utils.visualizations import Visualizer
 
 def show():
+    """Single prediction page"""
     st.title("🔍 Single Transaction Prediction")
+    
+    # Check if predictor exists
+    if not hasattr(st.session_state, 'predictor') or st.session_state.predictor is None:
+        st.error("❌ Model not loaded. Please check the model files.")
+        return
+    
+    predictor = st.session_state.predictor
     
     st.markdown("Enter transaction details below to check fraud probability.")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        step = st.number_input("Step (Hour)", min_value=0, max_value=1000, value=5)
+        step = st.number_input("Step (Hour)", min_value=0, value=5)
         amount = st.number_input("Transaction Amount ($)", min_value=0.01, value=2450.0, step=100.0)
         type = st.selectbox(
             "Transaction Type",
@@ -21,13 +28,13 @@ def show():
         )
         nameOrig = st.text_input("Origin Account", value="C1234567890")
         oldbalanceOrg = st.number_input("Origin Balance Before ($)", min_value=0.0, value=5000.0, step=100.0)
-        newbalanceOrig = st.number_input("Origin Balance After ($)", min_value=0.0, value=2550.0, step=100.0)
     
     with col2:
+        newbalanceOrig = st.number_input("Origin Balance After ($)", min_value=0.0, value=2550.0, step=100.0)
         nameDest = st.text_input("Destination Account", value="M9876543210")
         oldbalanceDest = st.number_input("Destination Balance Before ($)", min_value=0.0, value=1000.0, step=100.0)
         newbalanceDest = st.number_input("Destination Balance After ($)", min_value=0.0, value=3450.0, step=100.0)
-        isFlaggedFraud = st.selectbox("System Flag", options=[0, 1], index=0)
+        
         transaction_id = f"TXN_{datetime.now().strftime('%Y%m%d%H%M%S')}_{np.random.randint(1000, 9999)}"
         st.info(f"Transaction ID: {transaction_id}")
     
@@ -43,45 +50,47 @@ def show():
                 'nameDest': nameDest,
                 'oldbalanceDest': oldbalanceDest,
                 'newbalanceDest': newbalanceDest,
-                'isFlaggedFraud': isFlaggedFraud,
                 'transaction_id': transaction_id
             }
             
-            result = st.session_state.model_loader.predict(transaction)
+            result = predictor.predict(transaction)
             
             if result:
                 result['timestamp'] = datetime.now().isoformat()
                 result['transaction_id'] = transaction_id
+                
                 st.session_state.predictions.append(result)
                 st.session_state.total_predictions += 1
                 
                 st.divider()
                 st.subheader("📊 Prediction Results")
                 
+                # Display risk box
                 risk_level = result['risk_level']
                 
                 if risk_level == "HIGH":
                     st.markdown(f"""
-                    <div class="prediction-box risk-high">
-                        <h2 style="color: #FF0000;">⚠️ HIGH RISK</h2>
+                    <div style="padding:1.5rem;border-radius:10px;background-color:#FFE5E5;border:2px solid #FF0000;text-align:center;">
+                        <h2 style="color:#FF0000;">⚠️ HIGH RISK</h2>
                         <h3>Decision: BLOCK</h3>
                     </div>
                     """, unsafe_allow_html=True)
                 elif risk_level == "MEDIUM":
                     st.markdown(f"""
-                    <div class="prediction-box risk-medium">
-                        <h2 style="color: #FF9800;">⚡ MEDIUM RISK</h2>
+                    <div style="padding:1.5rem;border-radius:10px;background-color:#FFF3E0;border:2px solid #FF9800;text-align:center;">
+                        <h2 style="color:#FF9800;">⚡ MEDIUM RISK</h2>
                         <h3>Decision: REVIEW</h3>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
-                    <div class="prediction-box risk-low">
-                        <h2 style="color: #4CAF50;">✅ LOW RISK</h2>
+                    <div style="padding:1.5rem;border-radius:10px;background-color:#E8F5E9;border:2px solid #4CAF50;text-align:center;">
+                        <h2 style="color:#4CAF50;">✅ LOW RISK</h2>
                         <h3>Decision: APPROVE</h3>
                     </div>
                     """, unsafe_allow_html=True)
                 
+                # Metrics
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Fraud Probability", f"{result['fraud_probability']*100:.1f}%")
@@ -89,20 +98,8 @@ def show():
                     st.metric("Risk Level", result['risk_level'])
                 with col3:
                     st.metric("Decision", result['decision'])
-                
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    fig_gauge = Visualizer.create_gauge_chart(result['fraud_probability'])
-                    st.plotly_chart(fig_gauge, use_container_width=True)
-                
-                with col2:
-                    if result.get('top_features'):
-                        fig_importance = Visualizer.create_feature_importance_chart(result['top_features'])
-                        if fig_importance:
-                            st.plotly_chart(fig_importance, use_container_width=True)
-            else:
-                st.error("❌ Error making prediction. Please check if the model is loaded.")
     
+    # Quick examples
     with st.expander("📝 Quick Example Transactions"):
         examples = [
             {
@@ -124,5 +121,5 @@ def show():
         ]
         
         for example in examples:
-            if st.button(example["name"], key=f"example_{example['name']}"):
+            if st.button(example["name"]):
                 st.json(example["data"])
