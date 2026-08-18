@@ -4,211 +4,183 @@ import joblib
 from pathlib import Path
 import json
 import warnings
-import sys
 warnings.filterwarnings('ignore')
 
 class FraudPredictor:
-    """Fraud prediction service - MLflow free version"""
-    
-    def __init__(self, model_path=None):
-        # Try multiple paths to find models
-        if model_path is None:
-            possible_paths = [
-                Path("models"),                                    # Project root
-                Path("../models"),                                 # One level up
-                Path("../../models"),                              # Two levels up
-                Path("/mount/src/real-time-fraud-detection/models"),  # Streamlit Cloud
-                Path(__file__).parent.parent.parent / "models",    # From src/inference
-                Path(__file__).parent.parent / "models",           # From src/inference
-            ]
-            
-            self.model_path = None
-            for path in possible_paths:
-                if path.exists() and (path / "xgboost_model.pkl").exists():
-                    self.model_path = path
-                    print(f"✅ Found models at: {self.model_path}")
-                    break
-            
-            if self.model_path is None:
-                self.model_path = Path("models")
-                print(f"⚠️ Using default models path: {self.model_path}")
-        else:
-            self.model_path = Path(model_path)
-        
+    def __init__(self):
         self.model = None
         self.feature_columns = []
-        self.optimal_threshold = 0.5
-        self.model_info = {}
-        self.feature_engineer = None
-        
-        # Load everything
-        self.load_models()
+        self.threshold = 0.5
+        self._load_models()
     
-    def load_models(self):
-        """Load model and artifacts"""
+    def _load_models(self):
+        """Load model files"""
         try:
-            # 1. Check if directory exists
-            if not self.model_path.exists():
-                print(f"❌ Models directory not found: {self.model_path}")
-                print(f"   Current directory: {Path.cwd()}")
-                print(f"   Looking for models in: {list(Path.cwd().glob('**/models'))}")
-                return False
+            models_path = Path("models")
             
-            # 2. Load Model
-            model_file = self.model_path / "xgboost_model.pkl"
+            model_file = models_path / "xgboost_model.pkl"
             if model_file.exists():
-                try:
-                    self.model = joblib.load(model_file)
-                    print(f"✅ Model loaded successfully from {model_file}")
-                except Exception as e:
-                    print(f"❌ Error loading model: {e}")
-                    self.model = None
-                    return False
-            else:
-                print(f"❌ Model not found at {model_file}")
-                print(f"   Files in {self.model_path}: {list(self.model_path.glob('*'))}")
-                return False
+                self.model = joblib.load(model_file)
+                print(f"✅ Model loaded")
             
-            # 3. Load Feature Engineer
-            fe_file = self.model_path / "feature_engineer.pkl"
+            fe_file = models_path / "feature_engineer.pkl"
             if fe_file.exists():
-                try:
-                    self.feature_engineer = joblib.load(fe_file)
-                    if hasattr(self.feature_engineer, 'feature_columns'):
-                        self.feature_columns = self.feature_engineer.feature_columns
-                        print(f"✅ Features loaded: {len(self.feature_columns)}")
-                except Exception as e:
-                    print(f"⚠️ Error loading feature_engineer: {e}")
-            else:
-                print(f"⚠️ feature_engineer.pkl not found at {fe_file}")
+                fe = joblib.load(fe_file)
+                if hasattr(fe, 'feature_columns'):
+                    self.feature_columns = fe.feature_columns
+                    print(f"✅ Features: {len(self.feature_columns)}")
             
-            # 4. Load Model Info
-            info_file = self.model_path / "model_info.json"
+            info_file = models_path / "model_info.json"
             if info_file.exists():
-                try:
-                    with open(info_file, 'r') as f:
-                        self.model_info = json.load(f)
-                    self.optimal_threshold = self.model_info.get('optimal_threshold', 0.5)
-                    print(f"✅ Model info loaded, threshold: {self.optimal_threshold}")
-                except Exception as e:
-                    print(f"⚠️ Error loading model_info: {e}")
-                    self.optimal_threshold = 0.5
-            
-            return True
-            
+                with open(info_file, 'r') as f:
+                    info = json.load(f)
+                self.threshold = info.get('optimal_threshold', 0.5)
+                print(f"✅ Threshold: {self.threshold}")
+                
         except Exception as e:
             print(f"❌ Error loading models: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
     
     def prepare_features(self, transaction):
-        """Prepare features for prediction"""
+        """
+        Prepare features for XGBoost prediction.
+        XGBoost only accepts: int, float, bool, or category dtypes.
+        """
         try:
-            df = pd.DataFrame([transaction])
+            # Create a clean dictionary with only numeric features
+            features = {}
             
-            # If we have feature_engineer, use it
-            if self.feature_engineer is not None:
-                try:
-                    df_featured = self.feature_engineer.create_all_features(df)
-                    
-                    if self.feature_columns:
-                        for col in self.feature_columns:
-                            if col not in df_featured.columns:
-                                df_featured[col] = 0
-                        df_featured = df_featured[self.feature_columns]
-                    
-                    return df_featured
-                except Exception as e:
-                    print(f"⚠️ Feature engineer failed: {e}")
+            # ============================================
+            # 1. Amount Features (numeric)
+            # ============================================
+            amount = float(transaction.get('amount', 0))
+            features['amount'] = amount
+            features['amount_log'] = np.log1p(amount)
             
-            # Fallback: Manual feature creation
-            return self._manual_features(df)
+            # ============================================
+            # 2. Balance Features (numeric)
+            # ============================================
+            oldbalanceOrg = float(transaction.get('oldbalanceOrg', 0))
+            newbalanceOrig = float(transaction.get('newbalanceOrig', 0))
+            oldbalanceDest = float(transaction.get('oldbalanceDest', 0))
+            newbalanceDest = float(transaction.get('newbalanceDest', 0))
             
-        except Exception as e:
-            print(f"❌ Error preparing features: {e}")
-            return None
-    
-    def _manual_features(self, df):
-        """Manual feature creation as fallback"""
-        try:
-            # Transaction type features
-            type_dummies = pd.get_dummies(df['type'], prefix='type')
-            df = pd.concat([df, type_dummies], axis=1)
+            features['balance_change_orig'] = oldbalanceOrg - newbalanceOrig
+            features['balance_change_dest'] = newbalanceDest - oldbalanceDest
+            features['balance_error_orig'] = oldbalanceOrg - newbalanceOrig - amount
+            features['amount_vs_balance_orig'] = amount / (oldbalanceOrg + 1)
+            features['amount_vs_balance_dest'] = amount / (oldbalanceDest + 1)
             
+            # ============================================
+            # 3. Transaction Type Features (numeric)
+            # ============================================
+            txn_type = transaction.get('type', '')
+            
+            # One-hot encoding for transaction type
+            type_dummies = {
+                'type_PAYMENT': 1 if txn_type == 'PAYMENT' else 0,
+                'type_TRANSFER': 1 if txn_type == 'TRANSFER' else 0,
+                'type_CASH_OUT': 1 if txn_type == 'CASH_OUT' else 0,
+                'type_DEBIT': 1 if txn_type == 'DEBIT' else 0,
+                'type_CASH_IN': 1 if txn_type == 'CASH_IN' else 0,
+            }
+            features.update(type_dummies)
+            
+            # Type risk score
             type_risk = {'TRANSFER': 0.8, 'CASH_OUT': 0.7, 'PAYMENT': 0.2, 
                         'CASH_IN': 0.1, 'DEBIT': 0.3}
-            df['type_risk_score'] = df['type'].map(type_risk).fillna(0.5)
+            features['type_risk_score'] = type_risk.get(txn_type, 0.5)
             
-            # Balance features
-            df['balance_change_orig'] = df['oldbalanceOrg'] - df['newbalanceOrig']
-            df['balance_error_orig'] = df['oldbalanceOrg'] - df['newbalanceOrig'] - df['amount']
-            df['amount_vs_balance_orig'] = df['amount'] / (df['oldbalanceOrg'] + 1)
+            # ============================================
+            # 4. Time Features (numeric)
+            # ============================================
+            step = int(transaction.get('step', 0))
+            features['step'] = step
+            features['hour'] = step % 24
+            features['day'] = (step // 24) % 7
+            features['is_weekend'] = 1 if (step // 24) % 7 >= 5 else 0
+            features['is_night'] = 1 if (step % 24 >= 22 or step % 24 <= 5) else 0
             
-            # Customer features (default values for new customers)
-            df['orig_txn_count'] = 0
-            df['orig_avg_amount'] = 0
-            df['orig_fraud_ratio'] = 0
-            df['dest_txn_count'] = 0
-            df['dest_avg_amount'] = 0
+            # ============================================
+            # 5. Customer Features (numeric - default values)
+            # ============================================
+            features['orig_txn_count'] = 0
+            features['orig_avg_amount'] = 0
+            features['orig_fraud_ratio'] = 0
+            features['dest_txn_count'] = 0
+            features['dest_avg_amount'] = 0
+            features['is_new_origin'] = 1
             
-            # Amount features
-            df['amount_log'] = np.log1p(df['amount'])
-            df['amount_z_score'] = (df['amount'] - df['amount'].mean()) / (df['amount'].std() + 1e-6)
+            # ============================================
+            # 6. Interaction Features (numeric)
+            # ============================================
+            features['amount_type_risk'] = amount * features['type_risk_score']
+            features['balance_change_amount_interaction'] = features['balance_change_orig'] * amount
             
-            # Time features
-            df['hour'] = df['step'] % 24
-            df['is_night'] = ((df['hour'] >= 22) | (df['hour'] <= 5)).astype(int)
+            # ============================================
+            # 7. Create DataFrame
+            # ============================================
+            X = pd.DataFrame([features])
             
-            # Fill missing columns
+            # Add any missing feature columns with 0
             if self.feature_columns:
                 for col in self.feature_columns:
-                    if col not in df.columns:
-                        df[col] = 0
-                df = df[self.feature_columns]
+                    if col not in X.columns:
+                        X[col] = 0
+                X = X[self.feature_columns]
             
-            return df
+            # ============================================
+            # 8. Ensure all columns are numeric (float)
+            # ============================================
+            X = X.astype(float)
+            
+            return X
             
         except Exception as e:
-            print(f"❌ Error in manual features: {e}")
+            print(f"❌ Feature preparation error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def predict(self, transaction):
-        """Make prediction"""
+        """Make prediction for a single transaction"""
         try:
             if self.model is None:
                 print("❌ Model not loaded")
                 return None
+            
+            # Remove transaction_id if present (it's string)
+            if 'transaction_id' in transaction:
+                transaction = transaction.copy()
+                del transaction['transaction_id']
             
             X = self.prepare_features(transaction)
             if X is None or X.empty:
                 print("❌ Feature preparation failed")
                 return None
             
-            # Get probability
-            fraud_prob = float(self.model.predict_proba(X)[0][1])
+            # Predict
+            prob = float(self.model.predict_proba(X)[0][1])
             
-            # Determine risk and decision
-            if fraud_prob < 0.30:
-                risk_level = "LOW"
-                decision = "APPROVE"
-                color = "green"
-            elif fraud_prob < self.optimal_threshold:
-                risk_level = "MEDIUM"
-                decision = "REVIEW"
-                color = "orange"
+            # Decision
+            if prob < 0.3:
+                return {
+                    'fraud_probability': round(prob, 4),
+                    'risk_level': 'LOW',
+                    'decision': 'APPROVE'
+                }
+            elif prob < self.threshold:
+                return {
+                    'fraud_probability': round(prob, 4),
+                    'risk_level': 'MEDIUM',
+                    'decision': 'REVIEW'
+                }
             else:
-                risk_level = "HIGH"
-                decision = "BLOCK"
-                color = "red"
-            
-            return {
-                'fraud_probability': round(fraud_prob, 4),
-                'risk_level': risk_level,
-                'decision': decision,
-                'color': color
-            }
-            
+                return {
+                    'fraud_probability': round(prob, 4),
+                    'risk_level': 'HIGH',
+                    'decision': 'BLOCK'
+                }
+                
         except Exception as e:
             print(f"❌ Prediction error: {e}")
             import traceback
@@ -227,14 +199,14 @@ class FraudPredictor:
     def get_model_info(self):
         """Get model information"""
         return {
-            'model_type': self.model_info.get('model_type', 'xgboost'),
             'features': len(self.feature_columns),
-            'threshold': self.optimal_threshold,
-            'metrics': self.model_info.get('metrics', {})
+            'threshold': self.threshold,
+            'model_type': 'xgboost',
+            'metrics': {}
         }
 
 
-# Test the predictor
+# Test
 if __name__ == "__main__":
     print("="*50)
     print("Testing FraudPredictor...")
@@ -243,9 +215,7 @@ if __name__ == "__main__":
     predictor = FraudPredictor()
     
     if predictor.model is None:
-        print("❌ Model not loaded. Please check the models directory.")
-        print(f"   Looking in: {predictor.model_path}")
-        print(f"   Files there: {list(predictor.model_path.glob('*')) if predictor.model_path.exists() else 'Directory not found'}")
+        print("❌ Model not loaded")
     else:
         test_txn = {
             'step': 5,
@@ -260,14 +230,4 @@ if __name__ == "__main__":
         }
         
         result = predictor.predict(test_txn)
-        
-        print("\n" + "="*50)
-        print("🔮 Prediction Result")
-        print("="*50)
-        if result:
-            print(f"Fraud Probability: {result['fraud_probability']*100:.1f}%")
-            print(f"Risk Level: {result['risk_level']}")
-            print(f"Decision: {result['decision']}")
-        else:
-            print("❌ Prediction failed")
-        print("="*50)
+        print(f"\n🔮 Result: {result}")
