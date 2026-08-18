@@ -156,17 +156,16 @@ cython_debug/
 *.xls
 *.xlsx
 
-# Model files
-*.pkl
-*.joblib
-*.h5
-*.pb
-*.pt
-*.pth
-*.onnx
-*.tflite
-*.keras
-*.hdf5
+# ============================================
+# REMOVED: Model files blocking
+# ============================================
+# REMOVED: *.pkl
+# REMOVED: *.joblib
+# REMOVED: models/
+# REMOVED: models/*.pkl
+
+# Model files - KEEP THESE COMMENTS ONLY
+# Model files are now tracked in Git for deployment
 
 # MLflow
 mlruns/
@@ -188,19 +187,6 @@ data/interim/
 data/external/
 data/temp/
 data/tmp/
-
-# Model directories
-models/
-models/*.pkl
-models/*.joblib
-models/*.h5
-models/*.pb
-models/*.pt
-models/*.onnx
-models/*.keras
-models/*.hdf5
-models/*.zip
-models/*.tar.gz
 
 # Logs
 logs/
@@ -308,7 +294,6 @@ local_config.yml
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/features/.gitkeep
-!models/.gitkeep
 !logs/.gitkeep
 !mlruns/.gitkeep
 configs/local_config.yaml
@@ -1363,7 +1348,9 @@ System Volume Information/
 *.ova
 *.ovf
 
-# Specific to this project
+# ============================================
+# KEEP THESE - Important for project structure
+# ============================================
 !models/.gitkeep
 !data/raw/.gitkeep
 !data/processed/.gitkeep
