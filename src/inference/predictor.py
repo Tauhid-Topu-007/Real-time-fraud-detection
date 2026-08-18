@@ -18,18 +18,24 @@ class FraudPredictor:
         try:
             models_path = Path("models")
             
+            # Load model
             model_file = models_path / "xgboost_model.pkl"
             if model_file.exists():
                 self.model = joblib.load(model_file)
                 print(f"✅ Model loaded")
             
-            fe_file = models_path / "feature_engineer.pkl"
-            if fe_file.exists():
-                fe = joblib.load(fe_file)
-                if hasattr(fe, 'feature_columns'):
-                    self.feature_columns = fe.feature_columns
-                    print(f"✅ Features: {len(self.feature_columns)}")
+            # Load feature columns from training
+            feat_file = models_path / "feature_columns.pkl"
+            if feat_file.exists():
+                self.feature_columns = joblib.load(feat_file)
+                print(f"✅ Features loaded: {len(self.feature_columns)}")
+            else:
+                # If feature_columns.pkl doesn't exist, use the model's feature names
+                if hasattr(self.model, 'feature_names_in_'):
+                    self.feature_columns = list(self.model.feature_names_in_)
+                    print(f"✅ Features from model: {len(self.feature_columns)}")
             
+            # Load model info
             info_file = models_path / "model_info.json"
             if info_file.exists():
                 with open(info_file, 'r') as f:
@@ -39,51 +45,47 @@ class FraudPredictor:
                 
         except Exception as e:
             print(f"❌ Error loading models: {e}")
+            import traceback
+            traceback.print_exc()
     
     def prepare_features(self, transaction):
         """
-        Prepare features for XGBoost prediction.
-        XGBoost only accepts: int, float, bool, or category dtypes.
+        Prepare features EXACTLY as in training
         """
         try:
-            # Create a clean dictionary with only numeric features
+            # Create features dictionary - ONLY features used in training
             features = {}
             
             # ============================================
-            # 1. Amount Features (numeric)
+            # 1. Step (original)
+            # ============================================
+            features['step'] = int(transaction.get('step', 0))
+            
+            # ============================================
+            # 2. Amount (original)
             # ============================================
             amount = float(transaction.get('amount', 0))
             features['amount'] = amount
-            features['amount_log'] = np.log1p(amount)
             
             # ============================================
-            # 2. Balance Features (numeric)
+            # 3. Balance (original)
             # ============================================
-            oldbalanceOrg = float(transaction.get('oldbalanceOrg', 0))
-            newbalanceOrig = float(transaction.get('newbalanceOrig', 0))
-            oldbalanceDest = float(transaction.get('oldbalanceDest', 0))
-            newbalanceDest = float(transaction.get('newbalanceDest', 0))
-            
-            features['balance_change_orig'] = oldbalanceOrg - newbalanceOrig
-            features['balance_change_dest'] = newbalanceDest - oldbalanceDest
-            features['balance_error_orig'] = oldbalanceOrg - newbalanceOrig - amount
-            features['amount_vs_balance_orig'] = amount / (oldbalanceOrg + 1)
-            features['amount_vs_balance_dest'] = amount / (oldbalanceDest + 1)
+            features['oldbalanceOrg'] = float(transaction.get('oldbalanceOrg', 0))
+            features['newbalanceOrig'] = float(transaction.get('newbalanceOrig', 0))
+            features['oldbalanceDest'] = float(transaction.get('oldbalanceDest', 0))
+            features['newbalanceDest'] = float(transaction.get('newbalanceDest', 0))
             
             # ============================================
-            # 3. Transaction Type Features (numeric)
+            # 4. Transaction Type Features (as in training)
             # ============================================
             txn_type = transaction.get('type', '')
             
-            # One-hot encoding for transaction type
-            type_dummies = {
-                'type_PAYMENT': 1 if txn_type == 'PAYMENT' else 0,
-                'type_TRANSFER': 1 if txn_type == 'TRANSFER' else 0,
-                'type_CASH_OUT': 1 if txn_type == 'CASH_OUT' else 0,
-                'type_DEBIT': 1 if txn_type == 'DEBIT' else 0,
-                'type_CASH_IN': 1 if txn_type == 'CASH_IN' else 0,
-            }
-            features.update(type_dummies)
+            # One-hot encoding (match training)
+            features['type_PAYMENT'] = 1 if txn_type == 'PAYMENT' else 0
+            features['type_TRANSFER'] = 1 if txn_type == 'TRANSFER' else 0
+            features['type_CASH_OUT'] = 1 if txn_type == 'CASH_OUT' else 0
+            features['type_DEBIT'] = 1 if txn_type == 'DEBIT' else 0
+            features['type_CASH_IN'] = 1 if txn_type == 'CASH_IN' else 0
             
             # Type risk score
             type_risk = {'TRANSFER': 0.8, 'CASH_OUT': 0.7, 'PAYMENT': 0.2, 
@@ -91,46 +93,49 @@ class FraudPredictor:
             features['type_risk_score'] = type_risk.get(txn_type, 0.5)
             
             # ============================================
-            # 4. Time Features (numeric)
+            # 5. Balance Features (as in training)
             # ============================================
-            step = int(transaction.get('step', 0))
-            features['step'] = step
-            features['hour'] = step % 24
-            features['day'] = (step // 24) % 7
-            features['is_weekend'] = 1 if (step // 24) % 7 >= 5 else 0
-            features['is_night'] = 1 if (step % 24 >= 22 or step % 24 <= 5) else 0
+            features['balance_change_orig'] = features['oldbalanceOrg'] - features['newbalanceOrig']
+            features['balance_error_orig'] = features['oldbalanceOrg'] - features['newbalanceOrig'] - amount
+            features['amount_vs_balance_orig'] = amount / (features['oldbalanceOrg'] + 1)
             
             # ============================================
-            # 5. Customer Features (numeric - default values)
+            # 6. Customer Features (default as in training)
             # ============================================
             features['orig_txn_count'] = 0
             features['orig_avg_amount'] = 0
             features['orig_fraud_ratio'] = 0
             features['dest_txn_count'] = 0
             features['dest_avg_amount'] = 0
-            features['is_new_origin'] = 1
             
             # ============================================
-            # 6. Interaction Features (numeric)
+            # 7. Amount Features (as in training)
             # ============================================
-            features['amount_type_risk'] = amount * features['type_risk_score']
-            features['balance_change_amount_interaction'] = features['balance_change_orig'] * amount
+            features['amount_log'] = np.log1p(amount)
+            features['amount_z_score'] = 0  # Default for single prediction
             
             # ============================================
-            # 7. Create DataFrame
+            # 8. Time Features (as in training)
+            # ============================================
+            step = features['step']
+            features['hour'] = step % 24
+            features['is_night'] = 1 if (step % 24 >= 22 or step % 24 <= 5) else 0
+            
+            # ============================================
+            # 9. Create DataFrame with EXACT training columns
             # ============================================
             X = pd.DataFrame([features])
             
-            # Add any missing feature columns with 0
+            # Add missing columns with 0 (match training)
             if self.feature_columns:
                 for col in self.feature_columns:
                     if col not in X.columns:
                         X[col] = 0
+                
+                # Keep only training columns and maintain order
                 X = X[self.feature_columns]
             
-            # ============================================
-            # 8. Ensure all columns are numeric (float)
-            # ============================================
+            # Convert to float
             X = X.astype(float)
             
             return X
@@ -142,14 +147,14 @@ class FraudPredictor:
             return None
     
     def predict(self, transaction):
-        """Make prediction for a single transaction"""
+        """Make prediction"""
         try:
             if self.model is None:
                 print("❌ Model not loaded")
                 return None
             
-            # Remove transaction_id if present (it's string)
-            if 'transaction_id' in transaction:
+            # Remove transaction_id if present
+            if isinstance(transaction, dict) and 'transaction_id' in transaction:
                 transaction = transaction.copy()
                 del transaction['transaction_id']
             
@@ -187,22 +192,12 @@ class FraudPredictor:
             traceback.print_exc()
             return None
     
-    def predict_batch(self, transactions):
-        """Make multiple predictions"""
-        results = []
-        for transaction in transactions:
-            result = self.predict(transaction)
-            if result:
-                results.append(result)
-        return results
-    
     def get_model_info(self):
         """Get model information"""
         return {
             'features': len(self.feature_columns),
             'threshold': self.threshold,
-            'model_type': 'xgboost',
-            'metrics': {}
+            'model_type': 'xgboost'
         }
 
 
@@ -217,6 +212,9 @@ if __name__ == "__main__":
     if predictor.model is None:
         print("❌ Model not loaded")
     else:
+        print(f"✅ Model loaded with {len(predictor.feature_columns)} features")
+        print(f"📊 Feature columns: {predictor.feature_columns}")
+        
         test_txn = {
             'step': 5,
             'type': 'TRANSFER',
