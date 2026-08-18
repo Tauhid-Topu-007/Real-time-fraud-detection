@@ -1,0 +1,34 @@
+{
+  "model_type": "xgboost",
+  "features": [
+    "step",
+    "amount",
+    "oldbalanceOrg",
+    "newbalanceOrig",
+    "oldbalanceDest",
+    "newbalanceDest",
+    "type_risk_score",
+    "balance_change_orig",
+    "balance_error_orig",
+    "amount_vs_balance_orig",
+    "orig_txn_count",
+    "orig_avg_amount",
+    "orig_fraud_ratio",
+    "dest_txn_count",
+    "dest_avg_amount",
+    "amount_log",
+    "amount_z_score",
+    "hour",
+    "is_night"
+  ],
+  "metrics": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1_score": 1.0,
+    "roc_auc": 1.0,
+    "pr_auc": 1.0
+  },
+  "optimal_threshold": 0.1,
+  "dataset_size": 1374468,
+  "fraud_rate": 0.0011422601326476862
+}
