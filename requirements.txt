@@ -31,7 +31,7 @@ plotly
 shap
 
 # MLOps
-mlflow
+# mlflow
 
 # Database
 sqlalchemy
