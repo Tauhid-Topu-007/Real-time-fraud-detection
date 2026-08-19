@@ -1,6 +1,6 @@
 # ============================================
 # streamlit_app/app.py
-# COMPLETE HYBRID VERSION (ML + Rule-Based)
+# COMPLETE FIXED VERSION (applymap → map)
 # ============================================
 
 import streamlit as st
@@ -69,23 +69,30 @@ st.markdown("""
         background-color: #E8F5E9;
         border: 2px solid #4CAF50;
     }
-    .debug-box {
-        background-color: #F0F0F0;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-        font-family: monospace;
-        font-size: 0.9rem;
-    }
-    .rule-box {
-        background-color: #FFF8E1;
-        padding: 1rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-        border-left: 4px solid #FF9800;
-    }
     </style>
 """, unsafe_allow_html=True)
+
+# ============================================
+# HELPER FUNCTION FOR COLORING (FIXED)
+# ============================================
+def color_risk(val):
+    """Color rows based on risk level"""
+    if val == 'HIGH':
+        return 'background-color: #FFE5E5'
+    elif val == 'MEDIUM':
+        return 'background-color: #FFF3E0'
+    elif val == 'LOW':
+        return 'background-color: #E8F5E9'
+    return ''
+
+def apply_style_to_df(df):
+    """Apply styling to dataframe using map (not applymap)"""
+    try:
+        # Try using map (pandas 2.0+)
+        return df.style.map(color_risk, subset=['Risk Level'])
+    except AttributeError:
+        # Fallback for older pandas
+        return df.style.applymap(color_risk, subset=['Risk Level'])
 
 # ============================================
 # INITIALIZE SESSION STATE
@@ -125,7 +132,6 @@ with st.sidebar:
     
     st.divider()
     
-    # System Status
     st.subheader("📊 System Status")
     if st.session_state.predictor and st.session_state.predictor.model:
         st.success("✅ Model Loaded")
@@ -133,7 +139,6 @@ with st.sidebar:
             info = st.session_state.predictor.get_model_info()
             st.info(f"📊 Features: {info.get('features', 0)}")
             st.info(f"🎯 Threshold: {info.get('threshold', 0.5)}")
-            st.info(f"📈 Amount Mean: {info.get('amount_mean', 0):.2f}")
         except:
             pass
     else:
@@ -142,7 +147,6 @@ with st.sidebar:
     
     st.divider()
     
-    # Statistics
     st.subheader("📈 Statistics")
     st.metric("Total Predictions", st.session_state.total_predictions)
     
@@ -161,7 +165,7 @@ with st.sidebar:
         st.rerun()
 
 # ============================================
-# PAGE: DASHBOARD (Fixed)
+# PAGE: DASHBOARD (FIXED)
 # ============================================
 if page == "🏠 Dashboard":
     st.title("📊 Dashboard")
@@ -194,21 +198,11 @@ if page == "🏠 Dashboard":
         display_df.columns = ['Time', 'Transaction ID', 'Probability', 'Risk Level', 'Decision']
         
         # ============================================
-        # FIX: Replace applymap with map
+        # FIXED: Use map instead of applymap
         # ============================================
-        def color_risk(val):
-            if val == 'HIGH':
-                return 'background-color: #FFE5E5'
-            elif val == 'MEDIUM':
-                return 'background-color: #FFF3E0'
-            elif val == 'LOW':
-                return 'background-color: #E8F5E9'
-            return ''
-        
-        # For pandas 2.0+, use map instead of applymap
         styled_df = display_df.style.map(color_risk, subset=['Risk Level'])
         st.dataframe(styled_df, use_container_width=True, height=300)
-        
+
 # ============================================
 # PAGE: PREDICT
 # ============================================
@@ -228,7 +222,6 @@ models/
     else:
         predictor = st.session_state.predictor
         
-        # Show model info
         with st.expander("📊 Model Info", expanded=False):
             info = predictor.get_model_info()
             col1, col2, col3 = st.columns(3)
@@ -260,56 +253,36 @@ models/
             transaction_id = f"TXN_{datetime.now().strftime('%Y%m%d%H%M%S')}_{np.random.randint(1000, 9999)}"
             st.info(f"🆔 {transaction_id}")
         
-        # Quick example buttons
         st.subheader("📝 Quick Examples")
         col1, col2, col3 = st.columns(3)
         
         with col1:
             if st.button("🚨 Fraudulent Transfer", use_container_width=True):
                 st.session_state.example = {
-                    'step': 1,
-                    'type': 'TRANSFER',
-                    'amount': 999999.0,
-                    'nameOrig': 'C1111111111',
-                    'oldbalanceOrg': 1000000.0,
-                    'newbalanceOrig': 1.0,
-                    'nameDest': 'M9999999999',
-                    'oldbalanceDest': 0.0,
-                    'newbalanceDest': 999999.0
+                    'step': 1, 'type': 'TRANSFER', 'amount': 999999.0,
+                    'nameOrig': 'C1111111111', 'oldbalanceOrg': 1000000.0, 'newbalanceOrig': 1.0,
+                    'nameDest': 'M9999999999', 'oldbalanceDest': 0.0, 'newbalanceDest': 999999.0
                 }
                 st.rerun()
         
         with col2:
             if st.button("⚠️ Suspicious Cash Out", use_container_width=True):
                 st.session_state.example = {
-                    'step': 2,
-                    'type': 'CASH_OUT',
-                    'amount': 500000.0,
-                    'nameOrig': 'C2222222222',
-                    'oldbalanceOrg': 600000.0,
-                    'newbalanceOrig': 100000.0,
-                    'nameDest': 'M8888888888',
-                    'oldbalanceDest': 0.0,
-                    'newbalanceDest': 0.0
+                    'step': 2, 'type': 'CASH_OUT', 'amount': 500000.0,
+                    'nameOrig': 'C2222222222', 'oldbalanceOrg': 600000.0, 'newbalanceOrig': 100000.0,
+                    'nameDest': 'M8888888888', 'oldbalanceDest': 0.0, 'newbalanceDest': 0.0
                 }
                 st.rerun()
         
         with col3:
             if st.button("✅ Normal Payment", use_container_width=True):
                 st.session_state.example = {
-                    'step': 10,
-                    'type': 'PAYMENT',
-                    'amount': 50.0,
-                    'nameOrig': 'C4444444444',
-                    'oldbalanceOrg': 1000.0,
-                    'newbalanceOrig': 950.0,
-                    'nameDest': 'M6666666666',
-                    'oldbalanceDest': 500.0,
-                    'newbalanceDest': 550.0
+                    'step': 10, 'type': 'PAYMENT', 'amount': 50.0,
+                    'nameOrig': 'C4444444444', 'oldbalanceOrg': 1000.0, 'newbalanceOrig': 950.0,
+                    'nameDest': 'M6666666666', 'oldbalanceDest': 500.0, 'newbalanceDest': 550.0
                 }
                 st.rerun()
         
-        # Apply example if exists
         if 'example' in st.session_state:
             example = st.session_state.example
             step = example['step']
@@ -325,15 +298,10 @@ models/
         if st.button("🔮 Predict", type="primary", use_container_width=True):
             with st.spinner("Analyzing transaction..."):
                 transaction = {
-                    'step': int(step),
-                    'type': txn_type,
-                    'amount': float(amount),
-                    'nameOrig': str(nameOrig),
-                    'oldbalanceOrg': float(oldbalanceOrg),
-                    'newbalanceOrig': float(newbalanceOrig),
-                    'nameDest': str(nameDest),
-                    'oldbalanceDest': float(oldbalanceDest),
-                    'newbalanceDest': float(newbalanceDest)
+                    'step': int(step), 'type': txn_type, 'amount': float(amount),
+                    'nameOrig': str(nameOrig), 'oldbalanceOrg': float(oldbalanceOrg),
+                    'newbalanceOrig': float(newbalanceOrig), 'nameDest': str(nameDest),
+                    'oldbalanceDest': float(oldbalanceDest), 'newbalanceDest': float(newbalanceDest)
                 }
                 
                 result = predictor.predict(transaction)
@@ -351,7 +319,6 @@ models/
                     risk_level = result['risk_level']
                     prob = result['fraud_probability']
                     
-                    # Show probability with color
                     if prob > 0.7:
                         st.error(f"🚨 HIGH RISK - Probability: {prob*100:.2f}%")
                     elif prob > 0.3:
@@ -359,7 +326,6 @@ models/
                     else:
                         st.success(f"✅ LOW RISK - Probability: {prob*100:.2f}%")
                     
-                    # Risk box
                     if risk_level == "HIGH":
                         st.markdown(f"""
                         <div class="risk-box risk-high">
@@ -393,20 +359,16 @@ models/
                     with col3:
                         st.metric("Decision", result['decision'])
                     
-                    # Show rule-based info if available
                     if 'method' in result and result['method'] == 'rule_based':
                         st.info("⚡ Rule-based system detected fraud patterns")
-                        
                         if 'reasons' in result and result['reasons']:
                             st.write("**📋 Fraud Indicators Found:**")
                             for reason in result['reasons']:
                                 st.write(f"   - 🔴 {reason}")
-                        
                         if 'score' in result:
                             st.progress(result['score'] / 100)
                             st.write(f"**Risk Score:** {result['score']}/100")
                     
-                    # Debug info
                     with st.expander("🔍 Debug Info", expanded=False):
                         st.write("**Transaction Data:**")
                         st.json(transaction)
@@ -414,17 +376,11 @@ models/
                         st.write(f"**Probability:** {prob*100:.4f}%")
                         st.write(f"**Risk Level:** {risk_level}")
                         st.write(f"**Decision:** {result['decision']}")
-                        if 'method' in result:
-                            st.write(f"**Method:** {result['method']}")
-                        if 'reasons' in result:
-                            st.write(f"**Reasons:** {result['reasons']}")
-                        if 'score' in result:
-                            st.write(f"**Score:** {result['score']}/100")
                 else:
                     st.error("❌ Prediction failed. Please check the logs.")
 
 # ============================================
-# PAGE: BATCH PREDICT (UPDATED)
+# PAGE: BATCH PREDICT (FIXED)
 # ============================================
 elif page == "📊 Batch Predict":
     st.title("📊 Batch Prediction")
@@ -434,11 +390,8 @@ elif page == "📊 Batch Predict":
     
     **Required columns:** `step`, `type`, `amount`, `nameOrig`, `oldbalanceOrg`, 
     `newbalanceOrig`, `nameDest`, `oldbalanceDest`, `newbalanceDest`
-    
-    **Download Sample CSV:** Click the button below to download a sample file.
     """)
     
-    # Download sample CSV button
     sample_data = """step,type,amount,nameOrig,oldbalanceOrg,newbalanceOrig,nameDest,oldbalanceDest,newbalanceDest
 1,TRANSFER,999999.0,C1111111111,1000000.0,1.0,M9999999999,0.0,999999.0
 5,TRANSFER,50000.0,C1234567890,5000.0,0.0,M9876543210,1000.0,51000.0
@@ -456,14 +409,10 @@ elif page == "📊 Batch Predict":
     
     if uploaded_file is not None:
         try:
-            # Read CSV
             df = pd.read_csv(uploaded_file)
             st.success(f"✅ Loaded {len(df)} transactions")
             
-            # ============================================
-            # FIX: Normalize column names (case insensitive)
-            # ============================================
-            # Create mapping for column names
+            # Column mapping
             column_mapping = {}
             for col in df.columns:
                 col_lower = col.lower().strip()
@@ -473,23 +422,21 @@ elif page == "📊 Batch Predict":
                     column_mapping[col] = 'type'
                 elif col_lower in ['amount', 'amt', 'transaction_amount']:
                     column_mapping[col] = 'amount'
-                elif col_lower in ['nameorig', 'origin', 'origin_account', 'from_account']:
+                elif col_lower in ['nameorig', 'origin', 'origin_account']:
                     column_mapping[col] = 'nameOrig'
-                elif col_lower in ['oldbalanceorg', 'origin_balance', 'balance_before']:
+                elif col_lower in ['oldbalanceorg', 'origin_balance']:
                     column_mapping[col] = 'oldbalanceOrg'
-                elif col_lower in ['newbalanceorig', 'origin_balance_after', 'balance_after']:
+                elif col_lower in ['newbalanceorig', 'origin_balance_after']:
                     column_mapping[col] = 'newbalanceOrig'
-                elif col_lower in ['namedest', 'destination', 'dest_account', 'to_account']:
+                elif col_lower in ['namedest', 'destination', 'dest_account']:
                     column_mapping[col] = 'nameDest'
-                elif col_lower in ['oldbalancedest', 'dest_balance', 'dest_balance_before']:
+                elif col_lower in ['oldbalancedest', 'dest_balance']:
                     column_mapping[col] = 'oldbalanceDest'
-                elif col_lower in ['newbalancedest', 'dest_balance_after', 'dest_balance_after']:
+                elif col_lower in ['newbalancedest', 'dest_balance_after']:
                     column_mapping[col] = 'newbalanceDest'
             
-            # Rename columns
             df = df.rename(columns=column_mapping)
             
-            # Check if all required columns exist after mapping
             required_cols = ['step', 'type', 'amount', 'nameOrig', 'oldbalanceOrg', 
                            'newbalanceOrig', 'nameDest', 'oldbalanceDest', 'newbalanceDest']
             
@@ -497,26 +444,11 @@ elif page == "📊 Batch Predict":
             
             if missing_cols:
                 st.error(f"❌ Missing columns: {missing_cols}")
-                st.info("""
-                **Please make sure your CSV has these columns:**
-                - `step` (or Step, Steps, time_step)
-                - `type` (or Type, txn_type, transaction_type)
-                - `amount` (or Amount, amt)
-                - `nameOrig` (or nameorig, origin)
-                - `oldbalanceOrg` (or oldbalanceorg, origin_balance)
-                - `newbalanceOrig` (or newbalanceorig, origin_balance_after)
-                - `nameDest` (or namedest, destination)
-                - `oldbalanceDest` (or oldbalancedest, dest_balance)
-                - `newbalanceDest` (or newbalancedest, dest_balance_after)
-                """)
                 st.stop()
             
-            # Show column mapping
             with st.expander("📊 Column Mapping"):
-                st.write("**Columns found in your CSV:**")
                 for orig, new in column_mapping.items():
                     st.write(f"   {orig} → {new}")
-                st.write(f"\n**Final columns:** {df.columns.tolist()}")
             
             with st.expander("📊 Data Preview"):
                 st.dataframe(df.head(10), use_container_width=True)
@@ -534,7 +466,7 @@ elif page == "📊 Batch Predict":
                             status_text.text(f"Processing transaction {idx+1}/{len(df)}")
                             
                             transaction = row.to_dict()
-                            transaction['transaction_id'] = f"BATCH_{idx}_{datetime.now().strftime('%H%M%S')}"
+                            transaction['transaction_id'] = f"BATCH_{idx}"
                             
                             result = st.session_state.predictor.predict(transaction)
                             
@@ -593,20 +525,11 @@ elif page == "📊 Batch Predict":
                             display_df['fraud_probability'] = display_df['fraud_probability'] * 100
                             display_df.columns = [c.replace('fraud_probability', 'Probability %').replace('_', ' ').title() for c in display_df.columns]
                             
-                            def color_risk(val):
-                                if val == 'HIGH':
-                                    return 'background-color: #FFE5E5'
-                                elif val == 'MEDIUM':
-                                    return 'background-color: #FFF3E0'
-                                elif val == 'LOW':
-                                    return 'background-color: #E8F5E9'
-                                return ''
-                            
-                            st.dataframe(
-                                display_df.style.applymap(color_risk, subset=['Risk Level']),
-                                use_container_width=True,
-                                height=400
-                            )
+                            # ============================================
+                            # FIXED: Use map instead of applymap
+                            # ============================================
+                            styled_df = display_df.style.map(color_risk, subset=['Risk Level'])
+                            st.dataframe(styled_df, use_container_width=True, height=400)
                             
                             st.subheader("📊 Summary Statistics")
                             col1, col2, col3 = st.columns(3)
@@ -664,7 +587,6 @@ elif page == "ℹ️ Model Info":
             st.subheader("📋 Feature Information")
             st.write(f"**Total Features:** {info.get('features', 0)}")
             
-            # Show feature columns if available
             if hasattr(predictor, 'feature_columns') and predictor.feature_columns:
                 st.write("**First 10 Features:**")
                 for i, feat in enumerate(predictor.feature_columns[:10], 1):
@@ -688,14 +610,4 @@ models/
             1. **ML Model:** XGBoost predicts probability
             2. **Rule-Based:** 8 rules check for fraud patterns
             3. **Override:** If rules detect HIGH risk, ML is overridden
-            
-            **Rules Checked:**
-            - Very high amount (> $100,000)
-            - Amount > 80% of balance
-            - Balance nearly emptied
-            - Large transfer (> $50,000)
-            - Destination balance increased
-            - Large cash out (> $50,000)
-            - Amount equals full balance
-            - High amount + TRANSFER
             """)
