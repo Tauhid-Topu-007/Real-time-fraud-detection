@@ -7,6 +7,11 @@
     "newbalanceOrig",
     "oldbalanceDest",
     "newbalanceDest",
+    "type_CASH_IN",
+    "type_CASH_OUT",
+    "type_DEBIT",
+    "type_PAYMENT",
+    "type_TRANSFER",
     "type_risk_score",
     "balance_change_orig",
     "balance_error_orig",
@@ -19,7 +24,8 @@
     "amount_log",
     "amount_z_score",
     "hour",
-    "is_night"
+    "is_night",
+    "amount_type_risk"
   ],
   "metrics": {
     "precision": 1.0,
@@ -28,7 +34,7 @@
     "roc_auc": 1.0,
     "pr_auc": 1.0
   },
-  "optimal_threshold": 0.1,
-  "dataset_size": 1374468,
-  "fraud_rate": 0.0011422601326476862
+  "optimal_threshold": 0.26,
+  "dataset_size": 5489473,
+  "fraud_rate": 0.0007692906040343034
 }
