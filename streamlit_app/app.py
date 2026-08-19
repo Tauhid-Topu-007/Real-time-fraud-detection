@@ -161,7 +161,7 @@ with st.sidebar:
         st.rerun()
 
 # ============================================
-# PAGE: DASHBOARD
+# PAGE: DASHBOARD (Fixed)
 # ============================================
 if page == "🏠 Dashboard":
     st.title("📊 Dashboard")
@@ -193,6 +193,9 @@ if page == "🏠 Dashboard":
         display_df = display_df[['timestamp', 'transaction_id', 'fraud_probability', 'risk_level', 'decision']]
         display_df.columns = ['Time', 'Transaction ID', 'Probability', 'Risk Level', 'Decision']
         
+        # ============================================
+        # FIX: Replace applymap with map
+        # ============================================
         def color_risk(val):
             if val == 'HIGH':
                 return 'background-color: #FFE5E5'
@@ -202,12 +205,10 @@ if page == "🏠 Dashboard":
                 return 'background-color: #E8F5E9'
             return ''
         
-        st.dataframe(
-            display_df.style.applymap(color_risk, subset=['Risk Level']),
-            use_container_width=True,
-            height=300
-        )
-
+        # For pandas 2.0+, use map instead of applymap
+        styled_df = display_df.style.map(color_risk, subset=['Risk Level'])
+        st.dataframe(styled_df, use_container_width=True, height=300)
+        
 # ============================================
 # PAGE: PREDICT
 # ============================================
